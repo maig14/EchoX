@@ -2,15 +2,20 @@ import { GoogleGenAI } from "@google/genai";
 import { SYSTEM_PROMPT_SUMMARY } from "../constants";
 import { getXAIService, GrokVoice } from "./xaiService";
 
+// All available Grok voices for variety
+const GROK_VOICES: GrokVoice[] = ['Ara', 'Rex', 'Sal', 'Eve', 'Una', 'Leo'];
+
 interface CacheEntry {
   summary: string;
   audioBuffer: AudioBuffer;
+  voice: GrokVoice;
 }
 
 export class GeminiService {
   private ai: GoogleGenAI;
   private cache: Map<string, CacheEntry>;
-  private ttsVoice: GrokVoice = 'Ara';
+  private voiceIndex: number = 0;
+  private useRandomVoice: boolean = true; // Set to false to cycle sequentially
 
   constructor(apiKey: string) {
     console.log('Initializing GeminiService with API key:', apiKey ? `${apiKey.substring(0, 10)}...` : 'MISSING');
@@ -18,10 +23,27 @@ export class GeminiService {
     this.cache = new Map();
   }
 
-  // Set the Grok voice to use for TTS
-  setVoice(voice: GrokVoice) {
-    this.ttsVoice = voice;
-    console.log(`🎤 TTS voice set to: ${voice}`);
+  // Get next voice - either random or sequential cycling
+  private getNextVoice(): GrokVoice {
+    if (this.useRandomVoice) {
+      // Random voice selection
+      const randomIndex = Math.floor(Math.random() * GROK_VOICES.length);
+      const voice = GROK_VOICES[randomIndex];
+      console.log(`🎤 Selected random voice: ${voice}`);
+      return voice;
+    } else {
+      // Sequential cycling through voices
+      const voice = GROK_VOICES[this.voiceIndex];
+      this.voiceIndex = (this.voiceIndex + 1) % GROK_VOICES.length;
+      console.log(`🎤 Cycling to voice: ${voice} (index: ${this.voiceIndex})`);
+      return voice;
+    }
+  }
+
+  // Set whether to use random or sequential voice selection
+  setVoiceMode(random: boolean) {
+    this.useRandomVoice = random;
+    console.log(`🎤 Voice mode: ${random ? 'Random' : 'Sequential'}`);
   }
 
   // Check if we have data for this tweet ID
@@ -47,8 +69,9 @@ export class GeminiService {
   }
 
   // Step 2: Generate Audio from the summary using Grok TTS (xAI)
-  async generateAudio(text: string): Promise<AudioBuffer | null> {
-    console.log('🎤 Generating audio with Grok TTS for:', text.substring(0, 50));
+  async generateAudio(text: string, voice?: GrokVoice): Promise<{ audioBuffer: AudioBuffer; voice: GrokVoice } | null> {
+    const selectedVoice = voice || this.getNextVoice();
+    console.log(`🎤 Generating audio with Grok TTS (voice: ${selectedVoice}) for:`, text.substring(0, 50));
     
     const xaiService = getXAIService();
     
@@ -60,15 +83,16 @@ export class GeminiService {
     try {
       const audioBuffer = await xaiService.textToSpeech({
         text,
-        voice: this.ttsVoice,
+        voice: selectedVoice,
         responseFormat: 'wav', // WAV works well with Web Audio API
       });
 
       if (audioBuffer) {
-        console.log('✅ Grok TTS audio buffer created, duration:', audioBuffer.duration.toFixed(2) + 's');
+        console.log(`✅ Grok TTS (${selectedVoice}) audio buffer created, duration:`, audioBuffer.duration.toFixed(2) + 's');
+        return { audioBuffer, voice: selectedVoice };
       }
       
-      return audioBuffer;
+      return null;
     } catch (error) {
       console.error("Grok TTS error:", error);
       return null;
@@ -81,12 +105,13 @@ export class GeminiService {
    * @param content - The raw content (used if no podcastScript)
    * @param podcastScript - Pre-written podcast narration (skips summarization if provided)
    */
-  async processTweet(tweetId: string, content: string, podcastScript?: string): Promise<CacheEntry | null> {
+  async processTweet(tweetId: string, content: string, podcastScript?: string): Promise<{ summary: string; audioBuffer: AudioBuffer; voice?: GrokVoice } | null> {
     console.log('🎙️ Processing content:', tweetId);
     
     if (this.cache.has(tweetId)) {
-      console.log('✅ Returning cached data for:', tweetId);
-      return this.cache.get(tweetId)!;
+      const cached = this.cache.get(tweetId)!;
+      console.log(`✅ Returning cached data for: ${tweetId} (voice: ${cached.voice})`);
+      return cached;
     }
 
     // Use podcast script directly if available, otherwise summarize
@@ -100,16 +125,20 @@ export class GeminiService {
       textForAudio = await this.summarizeTweet(content);
     }
 
-    const audioBuffer = await this.generateAudio(textForAudio);
+    const result = await this.generateAudio(textForAudio);
 
-    if (textForAudio && audioBuffer) {
-      console.log('✅ Successfully processed:', tweetId);
-      const entry = { summary: textForAudio, audioBuffer };
+    if (textForAudio && result) {
+      console.log(`✅ Successfully processed: ${tweetId} with voice: ${result.voice}`);
+      const entry: CacheEntry = { 
+        summary: textForAudio, 
+        audioBuffer: result.audioBuffer, 
+        voice: result.voice 
+      };
       this.cache.set(tweetId, entry);
       return entry;
     }
     
-    console.error('❌ Failed to process:', tweetId, 'text:', !!textForAudio, 'audio:', !!audioBuffer);
+    console.error('❌ Failed to process:', tweetId, 'text:', !!textForAudio, 'audio:', !!result);
     return null;
   }
 }

@@ -1,0 +1,5 @@
+{
+  "name": "EchoX",
+  "description": "TikTok-style scrolling for bite-sized audio digests of X posts. Stay informed, hands-free.",
+  "requestFramePermissions": []
+}

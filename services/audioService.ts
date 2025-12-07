@@ -34,6 +34,8 @@ export class AudioController {
   private ctx: AudioContext | null = null;
   private currentSource: AudioBufferSourceNode | null = null;
   private gainNode: GainNode | null = null;
+  private manualStop: boolean = false; // Flag to track manual stops
+  private onEndedCallback: (() => void) | null = null;
   
   constructor() {
     // Defer AudioContext creation until first use (requires user interaction)
@@ -82,6 +84,10 @@ export class AudioController {
     // IMPORTANT: Resume context (requires prior user interaction)
     await this.resumeContext();
     
+    // Reset manual stop flag for new playback
+    this.manualStop = false;
+    this.onEndedCallback = onEnded || null;
+    
     console.log('🔊 Playing audio buffer:', {
       duration: buffer.duration.toFixed(2) + 's',
       sampleRate: buffer.sampleRate,
@@ -94,8 +100,17 @@ export class AudioController {
     source.connect(this.gainNode);
     
     source.onended = () => {
-      console.log('🔊 Audio playback ended');
-      if (onEnded) onEnded();
+      // Only call onEnded callback if audio ended naturally (not manually stopped)
+      if (!this.manualStop) {
+        console.log('🔊 Audio playback ended naturally');
+        if (this.onEndedCallback) {
+          this.onEndedCallback();
+        }
+      } else {
+        console.log('🔊 Audio was manually stopped, skipping onEnded callback');
+      }
+      // Reset the flag
+      this.manualStop = false;
     };
 
     source.start();
@@ -106,14 +121,21 @@ export class AudioController {
   stop() {
     if (this.currentSource) {
       try {
+        // Set flag BEFORE stopping so onended handler knows it was manual
+        this.manualStop = true;
         this.currentSource.stop();
         this.currentSource.disconnect();
-        console.log('🔊 Audio stopped');
+        console.log('🔊 Audio manually stopped');
       } catch (e) {
         // Ignore errors if already stopped
       }
       this.currentSource = null;
     }
+  }
+
+  // Clear the onEnded callback (useful when changing tracks)
+  clearCallback() {
+    this.onEndedCallback = null;
   }
   
   getContext() {

@@ -31,6 +31,11 @@ const Feed: React.FC<FeedProps> = ({ tweets, geminiService, feedTitle }) => {
   // Track the current request to prevent race conditions
   const currentRequestId = useRef<string | null>(null);
   const lastLoadedTweetId = useRef<string | null>(null);
+  
+  // Track if user manually skipped (to prevent auto-play when paused)
+  const userSkippedWhilePaused = useRef<boolean>(false);
+  // Store the current audio buffer for replay
+  const currentAudioBuffer = useRef<AudioBuffer | null>(null);
 
   // Get current tweet safely
   const currentTweet = tweets[currentIndex];
@@ -60,17 +65,24 @@ const Feed: React.FC<FeedProps> = ({ tweets, geminiService, feedTitle }) => {
   }, [stopProgressLoop]);
 
   const handleNext = useCallback(() => {
+    // Track if user is skipping while paused (to not auto-play)
+    const wasPaused = !isPlaying && !isLoading;
+    userSkippedWhilePaused.current = wasPaused;
+    
+    console.log('⏭️ Skip to next, wasPaused:', wasPaused);
+    
     setCurrentIndex((prev) => (prev + 1) % tweets.length);
     // Reset last loaded so the new track loads
     lastLoadedTweetId.current = null;
-  }, [tweets.length]);
+  }, [tweets.length, isPlaying, isLoading]);
 
   const handleTrackEnd = useCallback(() => {
-    console.log('🔊 Track ended, advancing...');
+    console.log('🔊 Track ended naturally, advancing...');
     stopProgressLoop();
     setIsPlaying(false);
     setProgress(100);
-    // Auto-advance to next track
+    // Auto-advance to next track (this is natural playback end, so always auto-play)
+    userSkippedWhilePaused.current = false;
     handleNext();
   }, [stopProgressLoop, handleNext]);
 
@@ -88,7 +100,8 @@ const Feed: React.FC<FeedProps> = ({ tweets, geminiService, feedTitle }) => {
   // Load current track data when the displayed tweet changes
   useEffect(() => {
     // Skip if no tweet or same tweet already loaded
-    if (!currentTweetId) return;
+    // Explicit check for both currentTweet and currentTweetId
+    if (!currentTweet || !currentTweetId) return;
     if (lastLoadedTweetId.current === currentTweetId) {
       console.log('⏭️ Skipping - already loaded:', currentTweetId);
       return;
@@ -103,12 +116,12 @@ const Feed: React.FC<FeedProps> = ({ tweets, geminiService, feedTitle }) => {
       if (!geminiService) {
         console.error('Gemini service not available - check GEMINI_API_KEY');
         setError('Audio unavailable - Gemini API key not configured');
-        setSummary(currentTweet?.content || null);
+        setSummary(currentTweet.content || null);
         setIsLoading(false);
         return;
       }
 
-      const displayTitle = currentTweet.trendTitle || currentTweet.content.substring(0, 40);
+      const displayTitle = currentTweet.trendTitle || currentTweet.content?.substring(0, 40) || 'Unknown';
       console.log('🎵 Loading track:', currentTweetId, displayTitle);
       
       setIsLoading(true);
@@ -127,7 +140,7 @@ const Feed: React.FC<FeedProps> = ({ tweets, geminiService, feedTitle }) => {
         // Pass podcastScript if available (skips summarization for pre-written content)
         const data = await geminiService.processTweet(
           currentTweetId, 
-          currentTweet.content,
+          currentTweet.content || '',
           currentTweet.podcastScript
         );
         
@@ -140,25 +153,33 @@ const Feed: React.FC<FeedProps> = ({ tweets, geminiService, feedTitle }) => {
         if (data) {
           console.log('✅ Track ready:', currentTweetId, 'duration:', data.audioBuffer.duration.toFixed(2) + 's');
           lastLoadedTweetId.current = currentTweetId;
+          currentAudioBuffer.current = data.audioBuffer;
           setSummary(data.summary);
           setDuration(data.audioBuffer.duration);
           setIsLoading(false);
           
-          // Auto-play only if still the current request
+          // Auto-play only if:
+          // 1. Still the current request
+          // 2. User didn't skip while paused
           if (currentRequestId.current === requestId) {
-            await playAudio(data.audioBuffer);
+            if (userSkippedWhilePaused.current) {
+              console.log('⏸️ User skipped while paused - not auto-playing');
+              userSkippedWhilePaused.current = false; // Reset the flag
+            } else {
+              await playAudio(data.audioBuffer);
+            }
           }
         } else {
           console.error('❌ No data returned');
           setError('Failed to generate audio');
-          setSummary(currentTweet.content);
+          setSummary(currentTweet.content || null);
           setIsLoading(false);
         }
       } catch (e) {
         console.error("❌ Error loading track:", e);
         if (currentRequestId.current === requestId) {
           setError('Error generating audio');
-          setSummary(currentTweet.content);
+          setSummary(currentTweet.content || null);
           setIsLoading(false);
         }
       }
@@ -180,17 +201,27 @@ const Feed: React.FC<FeedProps> = ({ tweets, geminiService, feedTitle }) => {
     if (isLoading) return;
 
     if (isPlaying) {
+      // Pause - suspend the audio context
       await audioController.pause();
       setIsPlaying(false);
       stopProgressLoop();
+      console.log('⏸️ Playback paused');
     } else {
+      // Resume - if we have a buffer loaded but context is suspended
       await audioController.resumeContext();
       setIsPlaying(true);
       startProgressLoop(duration);
+      console.log('▶️ Playback resumed');
     }
   };
 
   const handlePrev = () => {
+    // Track if user is skipping while paused (to not auto-play)
+    const wasPaused = !isPlaying && !isLoading;
+    userSkippedWhilePaused.current = wasPaused;
+    
+    console.log('⏮️ Skip to previous, wasPaused:', wasPaused);
+    
     setCurrentIndex((prev) => (prev - 1 + tweets.length) % tweets.length);
     // Reset last loaded so the new track loads
     lastLoadedTweetId.current = null;

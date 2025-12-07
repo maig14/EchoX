@@ -55,7 +55,7 @@ interface ParsedTweet {
   tweetId?: string;
 }
 
-interface SearchFilters {
+export interface SearchFilters {
   sources: ('x' | 'web' | 'news')[];
   fromDate: string;
   toDate: string;
@@ -70,7 +70,7 @@ interface SearchFilters {
   verified: boolean;
 }
 
-const DEFAULT_FILTERS: SearchFilters = {
+export const DEFAULT_FILTERS: SearchFilters = {
   sources: ['x'],
   fromDate: '',
   toDate: '',
@@ -417,8 +417,9 @@ export class XAIService {
   }
 
   // Fetch trending topics from X with podcast-style narration
-  async fetchTrending(): Promise<Tweet[]> {
+  async fetchTrending(userFilters?: Partial<SearchFilters>): Promise<Tweet[]> {
     console.log('🎙️ Fetching trending topics from X for podcast...');
+    console.log('📋 User filters:', userFilters);
     
     const prompt = `You are a podcast host creating short audio snippets about what's trending on X/Twitter RIGHT NOW.
 
@@ -457,11 +458,14 @@ Requirements:
 - Include real tweets from notable/verified accounts
 - Return ONLY valid JSON, no markdown or explanations`;
 
-    const response = await this.searchX(prompt, {
-      sources: ['x'], // 'news', 'web'
+    // Merge user filters with defaults for trending
+    const mergedFilters: Partial<SearchFilters> = {
+      sources: ['x'],
       verified: true,
-      
-    });
+      ...userFilters,
+    };
+
+    const response = await this.searchX(prompt, mergedFilters);
     
     if (!response) {
       console.log('No response from xAI for trending');
@@ -582,8 +586,12 @@ Return ONLY valid JSON, no markdown code blocks or explanations.`;
   }
 
   // Fetch personalized feed with podcast-style narration based on interests
-  async fetchPersonalizedFeed(interests: string[] = ['AI', 'Tech', 'Science']): Promise<Tweet[]> {
+  async fetchPersonalizedFeed(
+    interests: string[] = ['AI', 'Tech', 'Science'],
+    userFilters?: Partial<SearchFilters>
+  ): Promise<Tweet[]> {
     console.log('🎙️ Fetching personalized podcast feed for:', interests);
+    console.log('📋 User filters:', userFilters);
     
     const prompt = `You are a podcast host creating personalized audio snippets about trending topics on X/Twitter.
 
@@ -621,10 +629,14 @@ Requirements:
 - Include real tweets from notable/verified accounts in these fields
 - Return ONLY valid JSON, no markdown or explanations`;
 
-    const response = await this.searchX(prompt, {
-      sources: ['x'], //'news', 'web'
+    // Merge user filters with defaults for personalized feed
+    const mergedFilters: Partial<SearchFilters> = {
+      sources: ['x'],
       verified: true,
-    });
+      ...userFilters,
+    };
+
+    const response = await this.searchX(prompt, mergedFilters);
     
     if (!response) {
       console.log('No response from xAI for personalized feed');

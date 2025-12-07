@@ -1,6 +1,12 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Tweet } from '../types';
-import { XAIService, initXAIService } from '../services/xaiService';
+import { XAIService, initXAIService, SearchFilters } from '../services/xaiService';
+
+interface UseXAITweetsOptions {
+  xaiApiKey: string | null;
+  filters?: Partial<SearchFilters>;
+  interests?: string[];
+}
 
 interface UseXAITweetsReturn {
   trendingTweets: Tweet[];
@@ -12,7 +18,15 @@ interface UseXAITweetsReturn {
   isUsingLiveData: boolean;
 }
 
-export function useXAITweets(xaiApiKey: string | null): UseXAITweetsReturn {
+export function useXAITweets(
+  xaiApiKeyOrOptions: string | null | UseXAITweetsOptions
+): UseXAITweetsReturn {
+  // Handle both old API (just api key) and new API (options object)
+  const options: UseXAITweetsOptions = typeof xaiApiKeyOrOptions === 'object' && xaiApiKeyOrOptions !== null
+    ? xaiApiKeyOrOptions
+    : { xaiApiKey: xaiApiKeyOrOptions };
+  
+  const { xaiApiKey, filters, interests = ['AI', 'Tech', 'Science', 'Startups'] } = options;
   // Start with empty arrays - we fetch everything live
   const [trendingTweets, setTrendingTweets] = useState<Tweet[]>([]);
   const [myFeedTweets, setMyFeedTweets] = useState<Tweet[]>([]);
@@ -20,6 +34,18 @@ export function useXAITweets(xaiApiKey: string | null): UseXAITweetsReturn {
   const [error, setError] = useState<string | null>(null);
   const [xaiService, setXaiService] = useState<XAIService | null>(null);
   const [isUsingLiveData, setIsUsingLiveData] = useState(false);
+  
+  // Store current filters and interests for use in callbacks
+  const filtersRef = useRef(filters);
+  const interestsRef = useRef(interests);
+  
+  useEffect(() => {
+    filtersRef.current = filters;
+  }, [filters]);
+  
+  useEffect(() => {
+    interestsRef.current = interests;
+  }, [interests]);
 
   // Initialize xAI service when API key is available
   useEffect(() => {
@@ -41,7 +67,8 @@ export function useXAITweets(xaiApiKey: string | null): UseXAITweetsReturn {
 
     try {
       console.log('🎙️ Fetching live trending topics...');
-      const tweets = await xaiService.fetchTrending();
+      console.log('📋 Using filters:', filtersRef.current);
+      const tweets = await xaiService.fetchTrending(filtersRef.current);
       if (tweets.length > 0) {
         setTrendingTweets(tweets);
         setIsUsingLiveData(true);
@@ -66,7 +93,12 @@ export function useXAITweets(xaiApiKey: string | null): UseXAITweetsReturn {
 
     try {
       console.log('🎙️ Fetching personalized feed...');
-      const tweets = await xaiService.fetchPersonalizedFeed(['AI', 'Tech', 'Startups', 'Science']);
+      console.log('📋 Using interests:', interestsRef.current);
+      console.log('📋 Using filters:', filtersRef.current);
+      const tweets = await xaiService.fetchPersonalizedFeed(
+        interestsRef.current,
+        filtersRef.current
+      );
       if (tweets.length > 0) {
         setMyFeedTweets(tweets);
         setIsUsingLiveData(true);

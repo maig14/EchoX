@@ -1,6 +1,19 @@
 import React, { useState } from 'react';
 import { Tweet } from '../types';
-import { Loader2, ChevronDown, ChevronUp, MessageCircle } from 'lucide-react';
+import { Loader2, ChevronDown, ChevronUp, MessageCircle, ExternalLink } from 'lucide-react';
+
+// Helper to create X/Twitter profile URL from handle
+function getTwitterProfileUrl(handle: string): string {
+  const cleanHandle = handle.replace('@', '');
+  return `https://x.com/${cleanHandle}`;
+}
+
+// Helper to create X/Twitter search URL for the tweet content
+function getTwitterSearchUrl(content: string): string {
+  // Encode the content for URL and limit length
+  const searchQuery = encodeURIComponent(content.slice(0, 100));
+  return `https://x.com/search?q=${searchQuery}&f=live`;
+}
 
 interface AudioCardProps {
   tweet: Tweet;
@@ -100,16 +113,31 @@ const AudioCard: React.FC<AudioCardProps> = ({ tweet, summary, isLoading }) => {
               {showTopTweets && (
                 <div className="mt-2 space-y-2 max-h-32 overflow-y-auto">
                   {tweet.topTweets?.slice(0, 3).map((t, idx) => (
-                    <div key={idx} className="bg-white/5 rounded-lg p-2 border border-white/10">
+                    <a 
+                      key={idx} 
+                      href={getTwitterSearchUrl(t.content)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block bg-white/5 rounded-lg p-2 border border-white/10 hover:bg-white/10 hover:border-emerald-500/30 transition-all cursor-pointer group"
+                    >
                       <div className="flex items-center gap-1.5 mb-1">
                         <span className="text-[10px] font-semibold text-white">{t.author}</span>
-                        <span className="text-[9px] text-gray-500">{t.handle}</span>
+                        <a 
+                          href={getTwitterProfileUrl(t.handle)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-[9px] text-gray-500 hover:text-emerald-400 transition-colors"
+                        >
+                          {t.handle}
+                        </a>
                         {t.engagement && (
                           <span className="text-[8px] text-emerald-400 ml-auto">{t.engagement}</span>
                         )}
+                        <ExternalLink size={10} className="text-gray-600 group-hover:text-emerald-400 transition-colors" />
                       </div>
-                      <p className="text-[10px] text-gray-300 line-clamp-2">{t.content}</p>
-                    </div>
+                      <p className="text-[10px] text-gray-300 line-clamp-2 group-hover:text-white transition-colors">{t.content}</p>
+                    </a>
                   ))}
                 </div>
               )}

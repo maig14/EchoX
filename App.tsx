@@ -2,11 +2,13 @@ import React, { useState, useMemo } from 'react';
 import Navbar from './components/Navbar';
 import Feed from './components/Feed';
 import Search from './components/Search';
+import ProfileSettings from './components/ProfileSettings';
 import { Tab } from './types';
 import { GeminiService } from './services/geminiService';
 import { audioController } from './services/audioService';
 import { useXAITweets } from './hooks/useXAITweets';
-import { Menu, X, Settings, Info, Volume2, Zap, RefreshCw, Play } from 'lucide-react';
+import { useUserFilters } from './hooks/useUserFilters';
+import { Menu, X, Settings, Info, Volume2, Zap, RefreshCw, Play, Filter } from 'lucide-react';
 
 // Get API keys from environment variables
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
@@ -22,6 +24,23 @@ const App: React.FC = () => {
   const [currentTab, setCurrentTab] = useState<Tab>(Tab.Trending);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isAudioUnlocked, setIsAudioUnlocked] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+
+  // User filters and interests (loaded from localStorage)
+  const {
+    filters,
+    interests,
+    activeFiltersCount,
+    hasCustomFilters,
+    updateFilters,
+    updateInterests,
+    resetFilters,
+    addFromUser,
+    removeFromUser,
+    addHashtag,
+    removeHashtag,
+    toggleSource,
+  } = useUserFilters();
 
   // Unlock audio on user interaction (required by browsers)
   const handleStartListening = async () => {
@@ -40,7 +59,7 @@ const App: React.FC = () => {
     return new GeminiService(GEMINI_API_KEY);
   }, []);
 
-  // Use xAI for live tweets (falls back to mock data if no key)
+  // Use xAI for live tweets with user filters
   const { 
     trendingTweets, 
     myFeedTweets, 
@@ -48,7 +67,11 @@ const App: React.FC = () => {
     refetchTrending,
     refetchMyFeed,
     isUsingLiveData 
-  } = useXAITweets(XAI_API_KEY || null);
+  } = useXAITweets({
+    xaiApiKey: XAI_API_KEY || null,
+    filters,
+    interests,
+  });
 
   // Show splash screen until audio is unlocked
   if (!isAudioUnlocked) {
@@ -113,9 +136,9 @@ const App: React.FC = () => {
 
         {/* Right Actions */}
         <div className="flex items-center gap-3 pointer-events-auto">
-          <button className="bg-white text-black text-[10px] font-bold px-3 py-1.5 rounded-full hover:scale-105 transition-transform">
+          {/* <button className="bg-white text-black text-[10px] font-bold px-3 py-1.5 rounded-full hover:scale-105 transition-transform">
             Open App
-          </button>
+          </button> */}
           <button 
             className="text-white p-1 hover:bg-white/10 rounded-lg transition-colors"
             onClick={() => setIsMenuOpen(true)}
@@ -182,6 +205,35 @@ const App: React.FC = () => {
               <Volume2 size={20} className="text-gray-400" />
               <span className="text-sm font-medium">Audio Settings</span>
             </button>
+            <button 
+              onClick={() => {
+                setIsMenuOpen(false);
+                setIsProfileOpen(true);
+              }}
+              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 transition-colors text-left"
+            >
+              <div className="relative">
+                <Filter size={20} className="text-emerald-400" />
+                {hasCustomFilters && (
+                  <span className="absolute -top-1 -right-1 w-2 h-2 bg-emerald-500 rounded-full" />
+                )}
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">Search Filters</span>
+                  {activeFiltersCount > 0 && (
+                    <span className="text-[9px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded-full">
+                      {activeFiltersCount} active
+                    </span>
+                  )}
+                </div>
+                <p className="text-[10px] text-gray-500">
+                  {hasCustomFilters ? '💾 Saved filters loaded' : 'Default settings'}
+                  {filters.verified && ' • Verified'}
+                  {filters.fromUsers.length > 0 && ` • ${filters.fromUsers.length} users`}
+                </p>
+              </div>
+            </button>
             <button className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 transition-colors text-left">
               <Settings size={20} className="text-gray-400" />
               <span className="text-sm font-medium">Preferences</span>
@@ -227,6 +279,26 @@ const App: React.FC = () => {
 
       {/* Navigation */}
       <Navbar currentTab={currentTab} onTabChange={setCurrentTab} />
+
+      {/* Profile Settings Modal */}
+      <ProfileSettings
+        isOpen={isProfileOpen}
+        onClose={() => setIsProfileOpen(false)}
+        filters={filters}
+        interests={interests}
+        updateFilters={updateFilters}
+        updateInterests={updateInterests}
+        resetFilters={resetFilters}
+        addFromUser={addFromUser}
+        removeFromUser={removeFromUser}
+        addHashtag={addHashtag}
+        removeHashtag={removeHashtag}
+        toggleSource={toggleSource}
+        onApplyAndRefresh={async () => {
+          await Promise.all([refetchTrending(), refetchMyFeed()]);
+        }}
+        isRefreshing={isLoadingTweets}
+      />
     </div>
   );
 };
